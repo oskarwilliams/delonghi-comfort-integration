@@ -1,6 +1,6 @@
 {
   "name": "DeLonghi Comfort Integration",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "slug": "delonghi_comfort",
   "description": "Integration for managing DeLonghi comfort devices.",
   "url": "https://github.com/philm5/delonghi-comfort-integration",
