@@ -10,6 +10,8 @@ from .const import (
     CONF_USERNAME,
     CONF_PASSWORD,
     CONF_LANGUAGE,
+    CONF_ACCESS_TOKEN,
+    CONF_REFRESH_TOKEN,
     LANGUAGES,
     DEFAULT_LANGUAGE,
     CONF_SCAN_INTERVAL,
@@ -57,6 +59,8 @@ class DelonghiComfortConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 CONF_USERNAME: self._username,
                                 CONF_PASSWORD: self._password,
                                 CONF_LANGUAGE: self._language,
+                                CONF_ACCESS_TOKEN: api.access_token,
+                                CONF_REFRESH_TOKEN: api.refresh_token,
                             },
                         )
                     else:
