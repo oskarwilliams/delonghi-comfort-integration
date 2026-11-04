@@ -252,6 +252,8 @@ CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
 CONF_LANGUAGE = "language"
 CONF_SCAN_INTERVAL = "scan_interval"
+CONF_ACCESS_TOKEN = "access_token"
+CONF_REFRESH_TOKEN = "refresh_token"
 
 # Default values
 DEFAULT_TEMP_SETPOINT = 23.0

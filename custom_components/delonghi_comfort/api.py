@@ -1,5 +1,7 @@
 """API client for De'Longhi Comfort devices."""
 
+import asyncio
+from collections.abc import Callable
 import json
 import logging
 import urllib.parse
@@ -22,6 +24,8 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=15)
+
 
 class DeLonghiAPI:
     """API client for De'Longhi Comfort devices."""
@@ -32,14 +36,24 @@ class DeLonghiAPI:
         password: str,
         session: aiohttp.ClientSession,
         language: str = "en",
+        access_token: str | None = None,
+        refresh_token: str | None = None,
+        token_update_callback: Callable[[str, str | None], None] | None = None,
     ) -> None:
         """Initialize the API client."""
         self.username = username
         self.password = password
         self.language = language
         self.session = session
-        self.access_token = None
-        self.refresh_token = None
+        self.access_token = access_token
+        self.refresh_token = refresh_token
+        self._token_update_callback = token_update_callback
+        self._auth_lock = asyncio.Lock()
+
+    def _notify_token_update(self) -> None:
+        """Notify listener when tokens are updated."""
+        if self._token_update_callback and self.access_token:
+            self._token_update_callback(self.access_token, self.refresh_token)
 
     def get_query_param(self, url: str, param: str) -> str | None:
         """Extract query parameter from URL."""
@@ -53,50 +67,63 @@ class DeLonghiAPI:
 
     async def authenticate(self) -> bool:
         """Authenticate with the De'Longhi API."""
-        try:
-            self.access_token = await self._get_new_access_token()
-            return self.access_token is not None
-        except Exception as e:
-            _LOGGER.error("Authentication failed: %s", e)
-            return False
+        async with self._auth_lock:
+            if self.access_token:
+                return True
+            try:
+                if self.refresh_token:
+                    self.access_token = await self._refresh_access_token_unlocked()
+                else:
+                    self.access_token = await self._get_new_access_token()
+                return self.access_token is not None
+            except Exception as e:
+                _LOGGER.error("Authentication failed: %s", e)
+                return False
+
+    async def _fetch_auth_context(self) -> str | None:
+        """Step 1: Start OIDC authentication process and get context."""
+        async with self.session.get(
+            f"https://fidm.eu1.gigya.com/oidc/op/v1.0/{API_KEY}/authorize",
+            headers={"User-Agent": BROWSER_USER_AGENT},
+            params={
+                "client_id": CLIENT_ID,
+                "response_type": "code",
+                "redirect_uri": "https://google.it",
+                "scope": "openid email profile UID comfort en alexa",
+                "nonce": str(int(datetime.now().timestamp())),
+            },
+            allow_redirects=False,
+            timeout=REQUEST_TIMEOUT,
+        ) as response:
+            return self.get_query_param(response.headers["Location"], "context")
+
+    async def _fetch_gigya_ids(self) -> dict[str, Any]:
+        """Step 2: Fetch Gigya session IDs."""
+        async with self.session.get(
+            "https://socialize.eu1.gigya.com/socialize.getIDs",
+            headers={"User-Agent": BROWSER_USER_AGENT},
+            params={
+                "APIKey": API_KEY,
+                "includeTicket": "true",
+                "pageURL": "https://aylaopenid.delonghigroup.com/",
+                "sdk": "js_latest",
+                "sdkBuild": SDK_BUILD,
+                "format": "json",
+            },
+            timeout=REQUEST_TIMEOUT,
+        ) as response:
+            return await response.json(content_type=None)
 
     async def _get_new_access_token(self) -> str | None:
         """Get a new access token through the full authentication flow."""
-
-        
         # Thanks to https://github.com/duckwc/ECAMpy for the code to token convertion
         # Thanks to https://github.com/rtfpessoa/delonghi-comfort-client, for the cli code to implement the authentication flow
         try:
-            # Step 1: Start authentication process
-            async with self.session.get(
-                f"https://fidm.eu1.gigya.com/oidc/op/v1.0/{API_KEY}/authorize",
-                headers={"User-Agent": BROWSER_USER_AGENT},
-                params={
-                    "client_id": CLIENT_ID,
-                    "response_type": "code",
-                    "redirect_uri": "https://google.it",
-                    "scope": "openid email profile UID comfort en alexa",
-                    "nonce": str(int(datetime.now().timestamp())),
-                },
-                allow_redirects=False,
-            ) as response:
-                context = self.get_query_param(response.headers["Location"], "context")
-
-            # Step 2: Fetch Gigya session data
-            async with self.session.get(
-                "https://socialize.eu1.gigya.com/socialize.getIDs",
-                headers={"User-Agent": BROWSER_USER_AGENT},
-                params={
-                    "APIKey": API_KEY,
-                    "includeTicket": "true",
-                    "pageURL": "https://aylaopenid.delonghigroup.com/",
-                    "sdk": "js_latest",
-                    "sdkBuild": SDK_BUILD,
-                    "format": "json",
-                },
-            ) as response:
-                data = await response.text()
-                data = json.loads(data)
+            # Steps 1 & 2 are independent; run them in parallel
+            context, data = await asyncio.gather(
+                self._fetch_auth_context(),
+                self._fetch_gigya_ids(),
+            )
 
             ucid = data["ucid"]
             gmid = data["gmid"]
@@ -170,9 +197,9 @@ class DeLonghiAPI:
                     "sdkBuild": SDK_BUILD,
                     "format": "json",
                 },
+                timeout=REQUEST_TIMEOUT,
             ) as response:
-                login_data = await response.text()
-                login_data = json.loads(login_data)
+                login_data = await response.json(content_type=None)
 
             if login_data.get("statusCode") != 200:
                 _LOGGER.error(
@@ -198,9 +225,9 @@ class DeLonghiAPI:
                     "sdkBuild": SDK_BUILD,
                     "format": "json",
                 },
+                timeout=REQUEST_TIMEOUT,
             ) as response:
-                user_data = await response.text()
-                user_data = json.loads(user_data)
+                user_data = await response.json(content_type=None)
 
             user_uid = user_data["UID"]
             user_uid_signature = user_data["UIDSignature"]
@@ -219,6 +246,7 @@ class DeLonghiAPI:
                     "UIDSignature": user_uid_signature,
                     "signatureTimestamp": user_signature_timestamp,
                 },
+                timeout=REQUEST_TIMEOUT,
             ) as response:
                 consent_text = await response.text()
 
@@ -245,6 +273,7 @@ class DeLonghiAPI:
                     "gmidTicket": gmid_ticket,
                 },
                 allow_redirects=False,
+                timeout=REQUEST_TIMEOUT,
             ) as response:
                 code = self.get_query_param(response.headers["Location"], "code")
 
@@ -261,9 +290,9 @@ class DeLonghiAPI:
                     "grant_type": "authorization_code",
                     "redirect_uri": "https://google.it",
                 },
+                timeout=REQUEST_TIMEOUT,
             ) as response:
-                token_data = await response.text()
-                token_data = json.loads(token_data)
+                token_data = await response.json(content_type=None)
 
             idp_token = token_data["access_token"]
 
@@ -276,12 +305,14 @@ class DeLonghiAPI:
                     "app_secret": APP_SECRET,
                     "token": idp_token,
                 },
+                timeout=REQUEST_TIMEOUT,
             ) as response:
-                ayla_data = await response.text()
-                ayla_data = json.loads(ayla_data)
+                ayla_data = await response.json(content_type=None)
 
             self.refresh_token = ayla_data["refresh_token"]
-            return ayla_data["access_token"]
+            self.access_token = ayla_data["access_token"]
+            self._notify_token_update()
+            return self.access_token
 
         except Exception as e:
             _LOGGER.error("Failed to get access token: %s", e)
@@ -289,6 +320,11 @@ class DeLonghiAPI:
 
     async def refresh_access_token(self) -> str | None:
         """Refresh the access token using the refresh token."""
+        async with self._auth_lock:
+            return await self._refresh_access_token_unlocked()
+
+    async def _refresh_access_token_unlocked(self) -> str | None:
+        """Refresh the access token (caller must hold _auth_lock)."""
         if not self.refresh_token:
             return await self._get_new_access_token()
 
@@ -300,6 +336,7 @@ class DeLonghiAPI:
                     "Content-Type": "application/json",
                 },
                 json={"user": {"refresh_token": self.refresh_token}},
+                timeout=REQUEST_TIMEOUT,
             ) as response:
                 if response.status == 200:
                     data = await response.json()
@@ -309,6 +346,8 @@ class DeLonghiAPI:
                     if new_refresh_token:
                         self.refresh_token = new_refresh_token
 
+                    self.access_token = new_access_token
+                    self._notify_token_update()
                     return new_access_token
 
                 _LOGGER.warning("Failed to refresh token, falling back to login")
@@ -425,26 +464,38 @@ class DeLonghiAPI:
             _LOGGER.error("Failed to set fan speed for %s: %s", dsn, e)
             return False
 
+    async def _ensure_fresh_token(self, failed_token: str | None) -> str | None:
+        """Refresh token only if it has not already been updated by another caller."""
+        async with self._auth_lock:
+            if self.access_token and self.access_token != failed_token:
+                return self.access_token
+            return await self._refresh_access_token_unlocked()
+
     async def _get_request(self, path: str) -> dict[str, Any] | None:
         """Make a GET request to the API."""
         url = f"https://ads-eu.aylanetworks.com/{path}"
+        used_token = self.access_token
         headers = {
             "User-Agent": API_USER_AGENT,
-            "Authorization": f"auth_token {self.access_token}",
+            "Authorization": f"auth_token {used_token}",
             "Accept": "application/json",
         }
 
         try:
-            async with self.session.get(url, headers=headers) as response:
+            async with self.session.get(
+                url, headers=headers, timeout=REQUEST_TIMEOUT
+            ) as response:
                 response.raise_for_status()
                 return await response.json()
         except aiohttp.ClientResponseError as e:
             if e.status == 401:  # Unauthorized
                 # Try to refresh token and retry
-                self.access_token = await self.refresh_access_token()
-                if self.access_token:
-                    headers["Authorization"] = f"auth_token {self.access_token}"
-                    async with self.session.get(url, headers=headers) as response:
+                new_token = await self._ensure_fresh_token(used_token)
+                if new_token:
+                    headers["Authorization"] = f"auth_token {new_token}"
+                    async with self.session.get(
+                        url, headers=headers, timeout=REQUEST_TIMEOUT
+                    ) as response:
                         response.raise_for_status()
                         return await response.json()
             return None
@@ -457,24 +508,27 @@ class DeLonghiAPI:
     ) -> dict[str, Any] | None:
         """Make a POST request to the API."""
         url = f"https://ads-eu.aylanetworks.com/{path}"
+        used_token = self.access_token
         headers = {
             "User-Agent": API_USER_AGENT,
-            "Authorization": f"auth_token {self.access_token}",
+            "Authorization": f"auth_token {used_token}",
             "Content-Type": "application/json",
         }
 
         try:
-            async with self.session.post(url, headers=headers, json=data) as response:
+            async with self.session.post(
+                url, headers=headers, json=data, timeout=REQUEST_TIMEOUT
+            ) as response:
                 response.raise_for_status()
                 return await response.json()
         except aiohttp.ClientResponseError as e:
             if e.status == 401:  # Unauthorized
                 # Try to refresh token and retry
-                self.access_token = await self.refresh_access_token()
-                if self.access_token:
-                    headers["Authorization"] = f"auth_token {self.access_token}"
+                new_token = await self._ensure_fresh_token(used_token)
+                if new_token:
+                    headers["Authorization"] = f"auth_token {new_token}"
                     async with self.session.post(
-                        url, headers=headers, json=data
+                        url, headers=headers, json=data, timeout=REQUEST_TIMEOUT
                     ) as response:
                         response.raise_for_status()
                         return await response.json()

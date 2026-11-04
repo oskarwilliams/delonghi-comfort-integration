@@ -11,6 +11,8 @@ from .const import (
     CONF_USERNAME,
     CONF_PASSWORD,
     CONF_LANGUAGE,
+    CONF_ACCESS_TOKEN,
+    CONF_REFRESH_TOKEN,
     CONF_SCAN_INTERVAL,
     DEFAULT_LANGUAGE,
 )
@@ -35,7 +37,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     language = entry.data.get(CONF_LANGUAGE, DEFAULT_LANGUAGE)
 
     session = async_get_clientsession(hass)
-    api = DeLonghiAPI(username, password, session, language)
+
+    def _update_tokens(access_token: str, refresh_token: str | None) -> None:
+        """Persist updated tokens to config entry data."""
+        new_data = {
+            **entry.data,
+            CONF_ACCESS_TOKEN: access_token,
+            CONF_REFRESH_TOKEN: refresh_token,
+        }
+        if new_data != entry.data:
+            hass.config_entries.async_update_entry(entry, data=new_data)
+
+    api = DeLonghiAPI(
+        username,
+        password,
+        session,
+        language,
+        access_token=entry.data.get(CONF_ACCESS_TOKEN),
+        refresh_token=entry.data.get(CONF_REFRESH_TOKEN),
+        token_update_callback=_update_tokens,
+    )
 
     # Test authentication
     if not await api.authenticate():
