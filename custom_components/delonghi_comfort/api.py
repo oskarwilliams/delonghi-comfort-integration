@@ -331,18 +331,18 @@ class DeLonghiAPI:
             _LOGGER.error("Failed to get devices: %s", e)
             return []
 
-    async def get_device_properties(self, dsn: str) -> dict[str, Any]:
+    async def get_device_properties(self, dsn: str) -> list[dict[str, Any]] | None:
         """Get device properties by DSN."""
         if not self.access_token:
             if not await self.authenticate():
-                return {}
+                return None
 
         try:
             response = await self._get_request(f"apiv1/dsns/{dsn}/properties.json")
-            return response if isinstance(response, list) else []
+            return response if isinstance(response, list) else None
         except Exception as e:
             _LOGGER.error("Failed to get device properties for %s: %s", dsn, e)
-            return []
+            return None
 
     def get_property_value(
         self, properties: list[dict], property_name: str

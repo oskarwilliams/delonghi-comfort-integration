@@ -45,18 +45,20 @@ class DeLonghiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Fetch data from the API."""
         try:
             properties = await self.api.get_device_properties(self.dsn)
-
-            # Parse properties into a more usable format
-            data = {}
-            for prop in properties:
-                if "property" in prop:
-                    prop_info = prop["property"]
-                    data[prop_info["name"]] = prop_info["value"]
-
         except Exception as err:
             raise UpdateFailed(f"Error communicating with API: {err}") from err
-        else:
-            return data
+
+        if properties is None:
+            raise UpdateFailed(f"Failed to fetch properties for device {self.dsn}")
+
+        # Parse properties into a more usable format
+        data = {}
+        for prop in properties:
+            if "property" in prop:
+                prop_info = prop["property"]
+                data[prop_info["name"]] = prop_info["value"]
+
+        return data
 
     def async_update_local_data(self, updates: dict[str, Any]) -> None:
         """Update local coordinator data immediately after a successful command."""
