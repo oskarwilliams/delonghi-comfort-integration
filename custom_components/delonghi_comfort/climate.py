@@ -28,6 +28,9 @@ DEVICE_MODE_TO_HVAC = {
 
 HVAC_MODE_TO_DEVICE = {v: k for k, v in DEVICE_MODE_TO_HVAC.items()}
 
+FAN_SPEED_TO_MODE = {1: "low", 2: "medium", 3: "high", 4: "auto"}
+FAN_MODE_TO_SPEED = {v: k for k, v in FAN_SPEED_TO_MODE.items()}
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -154,10 +157,7 @@ class DeLonghiClimate(CoordinatorEntity, ClimateEntity):
         # Get fan speed from device data
         fan_speed = self.coordinator.data.get("get_int_fan_speed")
         if fan_speed is not None:
-            # Map device fan speed values to fan mode names
-            # Based on API: 1=Low, 2=Mid, 3=High, 4=Auto
-            fan_speed_map = {1: "low", 2: "medium", 3: "high", 4: "auto"}
-            return fan_speed_map.get(fan_speed, "auto")
+            return FAN_SPEED_TO_MODE.get(fan_speed, "auto")
         return "auto"
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
@@ -196,11 +196,7 @@ class DeLonghiClimate(CoordinatorEntity, ClimateEntity):
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
         """Set new target fan mode."""
-        # Map fan mode names to device values
-        # Based on API: 1=Low, 2=Mid, 3=High, 4=Auto
-        fan_mode_map = {"low": 1, "medium": 2, "high": 3, "auto": 4}
-
-        fan_speed = fan_mode_map.get(fan_mode)
+        fan_speed = FAN_MODE_TO_SPEED.get(fan_mode)
         if fan_speed is None:
             _LOGGER.error("Invalid fan mode: %s", fan_mode)
             return
@@ -224,10 +220,6 @@ class DeLonghiClimate(CoordinatorEntity, ClimateEntity):
         else:
             _LOGGER.error("Failed to turn off device")
 
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return additional state attributes."""
-        return dict(self.coordinator.data)
 
 class DeLonghiHeater(CoordinatorEntity, ClimateEntity):
     """Representation of a De'Longhi climate device."""
@@ -263,11 +255,6 @@ class DeLonghiHeater(CoordinatorEntity, ClimateEntity):
         self._attr_device_info = coordinator.get_device_info()
 
     @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return additional state attributes."""
-        return dict(self.coordinator.data)
-
-    @property
     def hvac_mode(self) -> HVACMode:
         """Return current operation mode."""
         # Check if device is on/off first
@@ -287,7 +274,9 @@ class DeLonghiHeater(CoordinatorEntity, ClimateEntity):
     def preset_mode(self) -> str | None:
         """Return the current preset mode."""
         device_mode = self.coordinator.data.get("device_mode")
-        return self.preset_modes[device_mode-1] if 1 <= device_mode <= 4 else None
+        if device_mode is not None and 1 <= device_mode <= 4:
+            return self.preset_modes[device_mode - 1]
+        return None
 
     @property
     def current_temperature(self) -> float | None:
