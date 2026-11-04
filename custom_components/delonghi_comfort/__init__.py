@@ -1,5 +1,6 @@
 """The De'Longhi Comfort integration."""
 
+from datetime import timedelta
 import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -13,6 +14,7 @@ from .const import (
     CONF_LANGUAGE,
     CONF_SCAN_INTERVAL,
     DEFAULT_LANGUAGE,
+    SCAN_INTERVAL,
 )
 from .api import DeLonghiAPI
 from .coordinator import DeLonghiCoordinator
@@ -96,4 +98,14 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Update options."""
-    await hass.config_entries.async_reload(entry.entry_id)
+    scan_interval = entry.options.get(CONF_SCAN_INTERVAL, SCAN_INTERVAL)
+    new_interval = timedelta(seconds=scan_interval)
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if not entry_data:
+        return
+
+    for coordinator in (
+        *entry_data["coordinators"],
+        *entry_data["heater_coordinators"],
+    ):
+        coordinator.update_interval = new_interval
