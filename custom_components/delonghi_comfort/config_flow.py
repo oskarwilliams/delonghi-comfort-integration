@@ -13,6 +13,7 @@ from .const import (
     LANGUAGES,
     DEFAULT_LANGUAGE,
     CONF_SCAN_INTERVAL,
+    SCAN_INTERVAL,
 )
 from .api import DeLonghiAPI
 
@@ -108,7 +109,9 @@ class DelonghiComfortOptionsFlow(config_entries.OptionsFlow):
                 {
                     vol.Optional(
                         CONF_SCAN_INTERVAL,
-                        default=self.config_entry.options.get(CONF_SCAN_INTERVAL, 15),
+                        default=self.config_entry.options.get(
+                            CONF_SCAN_INTERVAL, SCAN_INTERVAL
+                        ),
                     ): vol.All(vol.Coerce(int), vol.Range(min=5, max=300)),
                 }
             ),
