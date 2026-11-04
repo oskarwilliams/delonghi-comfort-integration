@@ -101,7 +101,9 @@ class DeLonghiSelect(CoordinatorEntity, SelectEntity):
         )
 
         if success:
-            await self.coordinator.async_request_refresh()
+            self.coordinator.async_update_local_data(
+                {self.entity_description.key: device_mode}
+            )
         else:
             _LOGGER.error("Failed to set device mode to %s", option)
 
@@ -140,6 +142,6 @@ class HeaterBrightness(CoordinatorEntity, SelectEntity):
         )
 
         if success:
-            await self.coordinator.async_request_refresh()
+            self.coordinator.async_update_local_data({"current_brightness": value})
         else:
             _LOGGER.error("Failed to set device brightness to %s", option)

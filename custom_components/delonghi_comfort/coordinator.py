@@ -58,6 +58,11 @@ class DeLonghiCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         else:
             return data
 
+    def async_update_local_data(self, updates: dict[str, Any]) -> None:
+        """Update local coordinator data immediately after a successful command."""
+        if self.data is not None:
+            self.async_set_updated_data({**self.data, **updates})
+
     def get_device_info(self) -> DeviceInfo:
         """Return device information for this coordinator."""
         return DeviceInfo(

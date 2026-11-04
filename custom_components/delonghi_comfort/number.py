@@ -112,7 +112,9 @@ class DeLonghiNumber(CoordinatorEntity, NumberEntity):
             success = False
 
         if success:
-            await self.coordinator.async_request_refresh()
+            self.coordinator.async_update_local_data(
+                {self.entity_description.key: value}
+            )
         else:
             _LOGGER.error("Failed to set %s to %s", self.entity_description.key, value)
 
