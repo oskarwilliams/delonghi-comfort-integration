@@ -120,19 +120,26 @@ class DeLonghiSwitch(CoordinatorEntity, SwitchEntity):
             success = await self.coordinator.api.set_silent_mode(self.coordinator.dsn, 1)
 
         if success:
-            await self.coordinator.async_request_refresh()
+            self.coordinator.async_update_local_data({self.entity_description.key: 1})
         else:
             _LOGGER.error("Failed to change %s to 1", self.entity_description.key)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the switch off."""
         if self.entity_description.key == "get_device_status":
-            success = await self.coordinator.api.set_device_status(self.coordinator.dsn, 2)
+            off_value = 2
+            success = await self.coordinator.api.set_device_status(self.coordinator.dsn, off_value)
         elif self.entity_description.key == "get_silent_function":
-            success = await self.coordinator.api.set_silent_mode(self.coordinator.dsn, 0)
+            off_value = 0
+            success = await self.coordinator.api.set_silent_mode(self.coordinator.dsn, off_value)
+        else:
+            off_value = 0
+            success = False
 
         if success:
-            await self.coordinator.async_request_refresh()
+            self.coordinator.async_update_local_data(
+                {self.entity_description.key: off_value}
+            )
         else:
             _LOGGER.error("Failed to change %s to 0", self.entity_description.key)
 
@@ -174,7 +181,9 @@ class HeaterSwitch(CoordinatorEntity, SwitchEntity):
         """Turn the switch on."""
         success = await self.coordinator.api.set_device_property(self.coordinator.dsn, f"set_{self.entity_description.key}", 1)
         if success:
-            await self.coordinator.async_request_refresh()
+            self.coordinator.async_update_local_data(
+                {f"get_{self.entity_description.key}": 1}
+            )
         else:
             _LOGGER.error("Failed to turn on: %s", self.entity_description.key)
 
@@ -182,6 +191,8 @@ class HeaterSwitch(CoordinatorEntity, SwitchEntity):
         """Turn the switch off."""
         success = await self.coordinator.api.set_device_property(self.coordinator.dsn, f"set_{self.entity_description.key}", 0)
         if success:
-            await self.coordinator.async_request_refresh()
+            self.coordinator.async_update_local_data(
+                {f"get_{self.entity_description.key}": 0}
+            )
         else:
             _LOGGER.error("Failed to turn off: %s", self.entity_description.key)

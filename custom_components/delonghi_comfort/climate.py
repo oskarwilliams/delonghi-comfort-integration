@@ -166,8 +166,9 @@ class DeLonghiClimate(CoordinatorEntity, ClimateEntity):
         if temperature is None:
             return
 
-        if await self._api.set_temperature_setpoint(self._dsn, float(temperature)):
-            await self.coordinator.async_request_refresh()
+        target_temp = float(temperature)
+        if await self._api.set_temperature_setpoint(self._dsn, target_temp):
+            self.coordinator.async_update_local_data({"temp_setpoint": target_temp})
         else:
             _LOGGER.error("Failed to set temperature setpoint")
 
@@ -176,7 +177,7 @@ class DeLonghiClimate(CoordinatorEntity, ClimateEntity):
         if hvac_mode == HVACMode.OFF:
             # Turn off the device
             if await self._api.set_device_status(self._dsn, 2):  # 2 = OFF
-                await self.coordinator.async_request_refresh()
+                self.coordinator.async_update_local_data({"get_device_status": 2})
             else:
                 _LOGGER.error("Failed to turn off device")
         else:
@@ -190,7 +191,9 @@ class DeLonghiClimate(CoordinatorEntity, ClimateEntity):
             # Set the mode
             device_mode = HVAC_MODE_TO_DEVICE.get(hvac_mode)
             if device_mode and await self._api.set_device_mode(self._dsn, device_mode):
-                await self.coordinator.async_request_refresh()
+                self.coordinator.async_update_local_data(
+                    {"get_device_status": 1, "get_device_mode": device_mode}
+                )
             else:
                 _LOGGER.error("Failed to set HVAC mode")
 
@@ -206,21 +209,21 @@ class DeLonghiClimate(CoordinatorEntity, ClimateEntity):
             return
 
         if await self._api.set_fan_speed(self._dsn, fan_speed):
-            await self.coordinator.async_request_refresh()
+            self.coordinator.async_update_local_data({"get_int_fan_speed": fan_speed})
         else:
             _LOGGER.error("Failed to set fan mode to %s", fan_mode)
 
     async def async_turn_on(self) -> None:
         """Turn the entity on."""
         if await self._api.set_device_status(self._dsn, 1):  # 1 = ON
-            await self.coordinator.async_request_refresh()
+            self.coordinator.async_update_local_data({"get_device_status": 1})
         else:
             _LOGGER.error("Failed to turn on device")
 
     async def async_turn_off(self) -> None:
         """Turn the entity off."""
         if await self._api.set_device_status(self._dsn, 2):  # 2 = OFF
-            await self.coordinator.async_request_refresh()
+            self.coordinator.async_update_local_data({"get_device_status": 2})
         else:
             _LOGGER.error("Failed to turn off device")
 
@@ -315,14 +318,14 @@ class DeLonghiHeater(CoordinatorEntity, ClimateEntity):
     async def async_turn_on(self) -> None:
         """Turn the entity on."""
         if await self._api.set_device_property(self._dsn, "set_status", 1):  # 1 = ON
-            await self.coordinator.async_request_refresh()
+            self.coordinator.async_update_local_data({"device_status": 1})
         else:
             _LOGGER.error("Failed to turn on device")
 
     async def async_turn_off(self) -> None:
         """Turn the entity off."""
         if await self._api.set_device_property(self._dsn, "set_status", 2):  # 2 = OFF
-            await self.coordinator.async_request_refresh()
+            self.coordinator.async_update_local_data({"device_status": 2})
         else:
             _LOGGER.error("Failed to turn off device")
 
@@ -333,7 +336,7 @@ class DeLonghiHeater(CoordinatorEntity, ClimateEntity):
             return
         device_mode = self.preset_modes.index(preset_mode) + 1
         if await self._api.set_device_property(self._dsn, "set_device_mode", device_mode):
-            await self.coordinator.async_request_refresh()
+            self.coordinator.async_update_local_data({"device_mode": device_mode})
         else:
             _LOGGER.error("Failed to set preset mode to %s", preset_mode)
 
@@ -341,7 +344,7 @@ class DeLonghiHeater(CoordinatorEntity, ClimateEntity):
         """Set new target fan mode."""
         power_level = self.fan_modes.index(fan_mode)
         if await self._api.set_device_property(self._dsn, "set_power_level", power_level):
-            await self.coordinator.async_request_refresh()
+            self.coordinator.async_update_local_data({"current_power_level": power_level})
         else:
             _LOGGER.error("Failed to set fan mode to %s", fan_mode)
 
@@ -350,7 +353,8 @@ class DeLonghiHeater(CoordinatorEntity, ClimateEntity):
         temperature = kwargs.get(ATTR_TEMPERATURE)
         if temperature is None:
             return
-        if await self._api.set_device_property(self._dsn, "temperature_setpoint", float(temperature)):
-            await self.coordinator.async_request_refresh()
+        target_temp = float(temperature)
+        if await self._api.set_device_property(self._dsn, "temperature_setpoint", target_temp):
+            self.coordinator.async_update_local_data({"temperature_setpoint": target_temp})
         else:
             _LOGGER.error("Failed to set temperature setpoint")
