@@ -1,5 +1,6 @@
 """The De'Longhi Comfort integration."""
 
+import asyncio
 import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -56,11 +57,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         dsn = device_info["dsn"]
 
         coordinator = DeLonghiCoordinator(hass, api, dsn, device_info, entry)
-        await coordinator.async_config_entry_first_refresh()
         if device_info["oem_model"] == "DL-heater":
             heater_coordinators.append(coordinator)
         else:
             coordinators.append(coordinator)
+
+    await asyncio.gather(
+        *(
+            coordinator.async_config_entry_first_refresh()
+            for coordinator in (*coordinators, *heater_coordinators)
+        )
+    )
 
     # Store API instance, devices, and coordinators in hass data
     hass.data.setdefault(DOMAIN, {})
